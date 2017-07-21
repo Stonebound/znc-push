@@ -132,7 +132,7 @@ class CPushMod : public CModule
 			defaults["target"] = "";
 
 			// Notification settings
-			defaults["message_content"] = "{context}: [{nick}] {message}";
+			defaults["message_content"] = "{message}";
 			defaults["message_length"] = "100";
 			defaults["message_title"] = "{title}";
 			defaults["message_uri"] = "";
@@ -667,9 +667,8 @@ class CPushMod : public CModule
 					params["username"] = options["username"];
 				}
 
-				params["payload"] = expand("{\"channel\": \"{target}\", \"text\": \"*{title}*: {message}\"}", replace);
-
-				PutDebug("payload: " + params["payload"]);
+				params["payload"] = expand("{\"channel\": \"{target}\", \"text\": \"{message}\"}", replace);
+				// PutDebug("payload: " + params["payload"]);
 			}
             else if (service == "discord")
 			{
