@@ -680,16 +680,15 @@ class CPushMod : public CModule
 				}
 
 				service_host = "discordapp.com";
-				service_url = "/api/webhooks/" + options["secret"] + "/slack";
+				service_url = "/api/webhooks/" + options["secret"];
 
 				if (options["username"] != "")
 				{
 					params["username"] = options["username"];
 				}
 
-				params["payload"] = expand("{\"channel\": \"{target}\", \"text\": \"*{title}*: {message}\"}", replace);
+				params["content"] = message_content;
 
-				PutDebug("payload: " + params["payload"]);
 			}
 			else if (service == "pushjet")
 			{
