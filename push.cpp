@@ -75,7 +75,7 @@ class CPushSocket : public CSocket
 };
 #else
 // forward declaration
-CURLcode make_curl_request(const CString& service_host, const CString& service_url,
+long make_curl_request(const CString& service_host, const CString& service_url,
 						   const CString& service_auth, MCString& params, int port,
 						   bool use_ssl, bool use_post,
 						   const CString& proxy, bool proxy_ssl_verify,
@@ -140,6 +140,7 @@ class CPushMod : public CModule
 			defaults["message_uri_title"] = "";
 			defaults["message_priority"] = "0";
 			defaults["message_sound"] = "";
+			defaults["message_escape"] = "";
 
 			// Notification conditions
 			defaults["away_only"] = "no";
@@ -268,6 +269,14 @@ class CPushMod : public CModule
 				replace["{network}"] = "(No network)";
 			}
 
+			if (options["message_escape"] != "")
+			{
+				CString::EEscape esc = CString::ToEscape(options["message_escape"]);
+				for (MCString::iterator i = replace.begin(); i != replace.end(); i++) {
+					i->second = i->second.Escape(esc);
+				}
+			}
+
 			CString message_uri = expand(options["message_uri"], replace);
 			CString message_title = expand(options["message_title"], replace);
 			CString message_content = expand(options["message_content"], replace);
@@ -349,27 +358,6 @@ class CPushMod : public CModule
 				{
 					params["notification[sound]"] = options["message_sound"];
 				}
-			}
-			else if (service == "nma")
-			{
-				if (options["secret"] == "")
-				{
-					PutModule("Error: secret not set");
-					return;
-				}
-				if (options["message_priority"] != "")
-				{
-					params["priority"] = options["message_priority"];
-				}
-
-				service_host = "www.notifymyandroid.com";
-				service_url = "/publicapi/notify";
-
-				params["apikey"] = options["secret"];
-				params["application"] = app;
-				params["event"] = message_title;
-				params["description"] = message_content;
-				params["url"] = message_uri;
 			}
 			else if (service == "pushover")
 			{
@@ -671,6 +659,25 @@ class CPushMod : public CModule
 
 				PutDebug("payload: " + params["payload"]);
 			}
+            else if (service == "discord")
+			{
+				if (options["secret"] == "")
+				{
+					PutModule("Error: secret (from webhook, e.g. 111111111111111111/abcdefghijklmopqrstuvwxyz1234567890-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456) not set");
+					return;
+				}
+
+				service_host = "discord.com";
+				service_url = "/api/webhooks/" + options["secret"];
+
+				if (options["username"] != "")
+				{
+					params["username"] = options["username"];
+				}
+
+				params["content"] = message_content;
+
+			}
 			else if (service == "pushjet")
 			{
 				if (options["secret"] == "")
@@ -709,6 +716,9 @@ class CPushMod : public CModule
 
 				params["chat_id"] = options["target"];
 				params["text"] = message_content;
+				if (options["message_escape"] == "HTML") {
+					params["parse_mode"] = "HTML";
+				}
 			}
 			else
 			{
@@ -726,7 +736,11 @@ class CPushMod : public CModule
 
 #ifdef USE_CURL
 			PutDebug("using libcurl");
-			make_curl_request(service_host, service_url, service_auth, params, use_port, use_ssl, use_post, options["proxy"], options["proxy_ssl_verify"] != "no", options["debug"] == "on");
+			long http_code = make_curl_request(service_host, service_url, service_auth, params, use_port, use_ssl, use_post, options["proxy"], options["proxy_ssl_verify"] != "no", options["debug"] == "on");
+			PutDebug("curl: HTTP status code " + CString(http_code));
+			if (!(http_code >= 200 && http_code < 300)) {
+				PutModule("Error: HTTP status code " + CString(http_code));
+			}
 #else
 			PutDebug("NOT using libcurl");
 			// Create the socket connection, write to it, and add it to the queue
@@ -908,9 +922,6 @@ class CPushMod : public CModule
 			options["highlight"].Split(" ", values, false);
 			values.push_back("%nick%");
 
-			bool matched = false;
-			bool negated = false;
-
 			for (VCString::iterator i = values.begin(); i != values.end(); i++)
 			{
 				CString value = i->AsLower();
@@ -941,18 +952,11 @@ class CPushMod : public CModule
 
 				if (msg.WildCmp(value))
 				{
-					if (negate_match)
-					{
-						negated = true;
-					}
-					else
-					{
-						matched = true;
-					}
+					return !negate_match;
 				}
 			}
 
-			return (matched && !negated);
+			return false;
 		}
 
 		/**
@@ -1237,6 +1241,25 @@ class CPushMod : public CModule
 		}
 
 		/**
+		 * Handle channel notices.
+		 *
+		 * @param nick Nick that sent the notice
+		 * @param channel Channel the notice was sent to
+		 * @param message Notice contents
+		 */
+		EModRet OnChanNotice(CNick& nick, CChan& channel, CString& message)
+		{
+			if (notify_channel(nick, channel, message))
+			{
+				CString title = "Channel Notice";
+
+				send_message(message, title, channel.GetName(), nick);
+			}
+
+			return CONTINUE;
+		}
+
+		/**
 		 * Handle a private message.
 		 *
 		 * @param nick Nick that sent the message
@@ -1273,6 +1296,24 @@ class CPushMod : public CModule
 		}
 
 		/**
+		 * Handle a private notice.
+		 *
+		 * @param nick Nick that sent the notice
+		 * @param message Notice contents
+		 */
+		EModRet OnPrivNotice(CNick& nick, CString& message)
+		{
+			if (notify_pm(nick, message))
+			{
+				CString title = "Private Notice";
+
+				send_message(message, title, nick.GetNick(), nick);
+			}
+
+			return CONTINUE;
+		}
+
+		/**
 		 * Handle a message sent by the user.
 		 *
 		 * @param target Target channel or nick
@@ -1291,6 +1332,18 @@ class CPushMod : public CModule
 		 * @param message Message contents
 		 */
 		EModRet OnUserAction(CString& target, CString& message)
+		{
+			last_reply_time[target] = last_active_time[target] = idle_time = time(NULL);
+			return CONTINUE;
+		}
+
+		/**
+		 * Handle a notice sent by the user.
+		 *
+		 * @param target Target channel or nick
+		 * @param message Notice contents
+		 */
+		EModRet OnUserNotice(CString& target, CString& message)
 		{
 			last_reply_time[target] = last_active_time[target] = idle_time = time(NULL);
 			return CONTINUE;
@@ -1404,10 +1457,6 @@ class CPushMod : public CModule
 						{
 							PutModule("Note: Boxcar 2 requires setting the 'secret' option");
 						}
-						else if (value == "nma")
-						{
-							PutModule("Note: NMA requires setting the 'secret' option");
-						}
 						else if (value == "pushover")
 						{
 							PutModule("Note: Pushover requires setting both the 'username' (to user key) and the 'secret' (to application api key) option");
@@ -1443,6 +1492,10 @@ class CPushMod : public CModule
 						else if (value == "slack")
 						{
 							PutModule("Note: Slack requires setting 'secret' (from webhook) and 'target' (channel or username), optional 'username' (bot name)");
+						}
+						else if (value == "discord")
+						{
+							PutModule("Note: Discord requires setting 'secret' (from webhook), optional 'username' (bot name)");
 						}
 						else if (value == "pushjet")
 						{
@@ -1776,7 +1829,11 @@ class CPushMod : public CModule
 				}
 
 #ifdef USE_CURL
-				make_curl_request(service_host, service_url, service_auth, params, use_port, use_ssl, use_post, options["proxy"], options["proxy_ssl_verify"] != "no", options["debug"] == "on");
+				long http_code = make_curl_request(service_host, service_url, service_auth, params, use_port, use_ssl, use_post, options["proxy"], options["proxy_ssl_verify"] != "no", options["debug"] == "on");
+				PutDebug("curl: HTTP status code " + CString(http_code));
+				if (!(http_code >= 200 && http_code < 300)) {
+					PutModule("Error: HTTP status code " + CString(http_code));
+				}
 #else
 				// Create the socket connection, write to it, and add it to the queue
 				CPushSocket *sock = new CPushSocket(this);
@@ -1861,7 +1918,7 @@ CString build_query_string(MCString& params)
  * @param use_ssl Use SSL
  * @param use_post Use POST method
  */
-CURLcode make_curl_request(const CString& service_host, const CString& service_url,
+long make_curl_request(const CString& service_host, const CString& service_url,
 						   const CString& service_auth, MCString& params, int port,
 						   bool use_ssl, bool use_post,
 						   const CString& proxy, bool proxy_ssl_verify,
@@ -1869,6 +1926,7 @@ CURLcode make_curl_request(const CString& service_host, const CString& service_u
 {
 	CURL *curl;
 	CURLcode result;
+	long http_code;
 
 	curl = curl_easy_init();
 
@@ -1916,9 +1974,15 @@ CURLcode make_curl_request(const CString& service_host, const CString& service_u
 	}
 
 	result = curl_easy_perform(curl);
+	if (result != CURLE_OK) {
+		curl_easy_cleanup(curl);
+		return -1;
+	}
+
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 	curl_easy_cleanup(curl);
 
-	return result;
+	return http_code;
 }
 
 #else

@@ -13,7 +13,6 @@ conditions.  ZNC Push current supports the following services:
 
 * [Boxcar][]
 * [Boxcar 2][]
-* [Notify My Android][] (NMA)
 * [Pushover][]
 * [Pushsafer][]
 * [Prowl][]
@@ -25,6 +24,7 @@ conditions.  ZNC Push current supports the following services:
 * [Pushjet][]
 * [Telegram][]
 * [Slack][]
+* [Discord][]
 * Custom URL GET requests
 
 This project is still a Work In Progress, but should be functional enough and stable enough
@@ -242,7 +242,6 @@ to something similar to "http://domain/#channel/2011-03-09 14:25:09", or
     Possible values include:
 
     *   `boxcar`
-    *   `nma`
     *   `pushover`
     *   `pushsafer`
     *   `prowl`
@@ -252,6 +251,7 @@ to something similar to "http://domain/#channel/2011-03-09 14:25:09", or
     *   `pushjet`
     *   `telegram`
     *   `slack`
+    *   `discord`
     *   `url`
 
 *   `username` Default: ` `
@@ -308,6 +308,16 @@ to something similar to "http://domain/#channel/2011-03-09 14:25:09", or
     on this value.
 
     When using Nexmo, this value is where the SMS is "from". In most cases, you must use a valid number in international format.
+
+*   `message_escape` Default: ` `
+
+    If set, keyword values will be escaped in this format before they are expanded in
+    `message_content`. Possible values are all that ZNC supports, most useful here will be
+    `HTML` or `URL`.
+
+    Note that the resulting string in `message_content` after keyword expansion will not be
+    escaped. If you need to escape characters for a service, you have to set the escaped
+    string to `message_content`.
 
 *   `message_uri` Default: ` `
 
@@ -527,7 +537,6 @@ from me and not from my employer.  See the `LICENSE` file for details.
 
 [Boxcar]: http://boxcar.io
 [Boxcar 2]: http://boxcar.io
-[Notify My Android]: http://www.notifymyandroid.com
 [Pushover]: http://pushover.net
 [Pushsafer]: http://www.pushsafer.com
 [Prowl]: http://www.prowlapp.com
@@ -539,6 +548,7 @@ from me and not from my employer.  See the `LICENSE` file for details.
 [Pushjet]: http://pushjet.io
 [Telegram]: https://telegram.org/
 [Slack]: https://slack.com/
+[Discord]: https://discord.gg
 
 [faq]: https://github.com/jreese/znc-push/blob/master/doc/faq.md
 [examples]: https://github.com/jreese/znc-push/blob/master/doc/examples.md
